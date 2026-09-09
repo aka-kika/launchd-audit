@@ -59,7 +59,7 @@ Every job on the machine, in one call.
 }
 ```
 
-**Sources scanned:** `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `crontab -l` (+ `/etc/cron.d`, `/etc/crontab`), `brew services list`.
+**Sources scanned:** `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `crontab -l` (+ `/etc/cron.d`, `/etc/crontab`). Brew services are the `homebrew.mxcl.*` plists in `~/Library/LaunchAgents`; `brew` is not invoked.
 
 ---
 

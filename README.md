@@ -27,7 +27,7 @@ Four of the five tools are read-only. Mutation is one tool, dry-run by default. 
 | `search_job_logs` | Regex search in that job's output files, optional `since` date. |
 | `job_action` | The only mutating tool. Dry-run unless `confirm=true`. |
 
-Sources scanned: `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `crontab -l` plus `/etc/cron.d` and `/etc/crontab`, `brew services list`. `/System/Library` is skipped on purpose.
+Sources scanned: `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `crontab -l` plus `/etc/cron.d` and `/etc/crontab`. Brew services are recognised by their `homebrew.mxcl.*` plists in `~/Library/LaunchAgents`; `brew` itself is never called. `/System/Library` is skipped on purpose.
 
 ## Safety
 

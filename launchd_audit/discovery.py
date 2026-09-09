@@ -53,7 +53,11 @@ def parse_plist(path: str, kind: str, errors: list[dict]) -> Job | None:
     if raw.get("QueueDirectories"):
         sched_parts.append("on queued directories")
 
-    source = "brew-service" if os.path.basename(path).startswith("homebrew.mxcl.") else kind
+    # Only user-domain brew plists become "brew-service"; a brew plist installed with
+    # `sudo brew services` lives in /Library/LaunchDaemons and must keep the
+    # launchd-system source so job_action's read-only guard still applies.
+    is_brew = os.path.basename(path).startswith("homebrew.mxcl.")
+    source = "brew-service" if is_brew and kind == "launchd-user" else kind
     outputs = [p for p in (raw.get("StandardOutPath"), raw.get("StandardErrorPath")) if p]
 
     return Job(

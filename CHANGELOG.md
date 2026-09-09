@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **Fix:** declared dependency floor was `mcp>=1.2.0` but the code imports `MCPServer`,
+  which only exists in mcp 2.x. Now `mcp>=2.0.0`. Fresh installs without `uv.lock`
+  would have failed at import.
+- **Fix (safety):** a brew plist under `/Library/LaunchDaemons` (from `sudo brew services`)
+  was classified `brew-service` and slipped past the system-daemon guard in `job_action`.
+  Such plists now stay `launchd-system`, and the guard additionally checks the plist path.
+- **Fix:** `remove` on a plist in a directory this user cannot write (e.g. root-owned
+  `/Library/LaunchAgents`) is refused at plan time instead of booting the job out and then
+  failing the move to Trash.
+- **Fix:** the Trash filename is computed once in the plan and reused by apply, so the undo
+  recipe always names the real file.
+- **Fix:** cron `remove` matched lines byte-for-byte, so any extra whitespace in the crontab
+  meant "removed 0 lines" reported as success. Matching is now whitespace-normalised, and a
+  zero-match run is reported as a failure with the crontab left untouched.
+- Docs: brew services are detected from `homebrew.mxcl.*` plists; `brew services list`
+  was never called.
+- Tests: 40 → 58 (discovery, runtime parsing, cron removal, Trash path, guards).
+
 ## 0.2.0 — 2026-09-07
 
 - **Fleet rollout.** Registered across all five agent surfaces: Claude Code
