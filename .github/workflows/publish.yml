@@ -1,0 +1,44 @@
+name: publish
+
+# Publishes to PyPI via trusted publishing (OIDC): no API token is stored anywhere.
+# One-time setup on PyPI: Account -> Publishing -> add a pending publisher with
+#   project name: launchd-audit, owner: aka-kika, repo: launchd-audit,
+#   workflow: publish.yml, environment: pypi
+# Runs when a GitHub release is published, or by hand from the Actions tab.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run pytest -q
+      - run: uv build
+      - name: check the built version matches the tag
+        if: github.event_name == 'release'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ls dist/ | grep -q "launchd_audit-${tag}-" || { echo "dist/ has no build for $tag"; ls dist/; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
