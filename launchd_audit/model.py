@@ -29,6 +29,7 @@ class Job:
             "program": self.program,
             "schedule_human": self.schedule_human,
             "state": self.state,
+            "disabled": self.disabled,
             "running_pid": self.running_pid,
             "last_exit": self.last_exit,
             "runs": self.runs,

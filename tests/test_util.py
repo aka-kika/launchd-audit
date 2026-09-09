@@ -1,4 +1,4 @@
-from launchd_audit.util import human_bytes, mask_mapping
+from launchd_audit.util import human_bytes, mask_mapping, redact_args
 
 
 class TestMasking:
@@ -21,3 +21,20 @@ class TestHumanBytes:
 
     def test_gb(self):
         assert human_bytes(int(2.5 * 1024**3)) == "2.5 GB"
+
+
+class TestRedactArgs:
+    def test_key_equals_value_forms(self):
+        out = redact_args(["/usr/bin/tool", "--token=abc123", "API_KEY=xyz", "--verbose=1"])
+        assert out == ["/usr/bin/tool", "--token=***", "API_KEY=***", "--verbose=1"]
+
+    def test_flag_then_value(self):
+        out = redact_args(["/usr/bin/tool", "--password", "hunter2", "--out", "/tmp/x"])
+        assert out == ["/usr/bin/tool", "--password", "***", "--out", "/tmp/x"]
+
+    def test_plain_args_untouched(self):
+        args = ["/bin/sh", "-c", "echo hi", "/Users/x/script.sh"]
+        assert redact_args(args) == args
+
+    def test_non_string_args(self):
+        assert redact_args([1, None]) == ["1", "None"]

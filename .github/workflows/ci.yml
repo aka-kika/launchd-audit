@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run pytest -q
+      - name: stdio smoke test (real launchctl)
+        if: runner.os == 'macOS'
+        run: uv run python scripts/smoke.py
+      - name: build wheel
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        run: uv build

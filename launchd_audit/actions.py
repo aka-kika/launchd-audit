@@ -20,6 +20,7 @@ from .util import expand
 
 ALLOWED_ACTIONS = ("enable", "disable", "start", "stop", "truncate_logs", "remove")
 GUARDED_SOURCES = ("launchd-system",)
+GUARDED_DIRS = ("/Library/LaunchDaemons",)
 ACTIONS_LOG = expand("~/.launchd-audit/actions.jsonl")
 
 
@@ -27,11 +28,18 @@ def _target(job: Job) -> str:
     return f"gui/{os.getuid()}/{job.id}"
 
 
+def _in_guarded_dir(path: str | None) -> bool:
+    if not path:
+        return False
+    real = os.path.realpath(path)
+    return any(real.startswith(d.rstrip("/") + "/") for d in GUARDED_DIRS)
+
+
 def plan_action(job: Job, action: str) -> dict:
     """Pure planning. Returns commands / files / warnings / undo. Never mutates anything."""
     if action not in ALLOWED_ACTIONS:
         return {"error": f"unknown action '{action}' (allowed: {', '.join(ALLOWED_ACTIONS)})"}
-    if job.source in GUARDED_SOURCES:
+    if job.source in GUARDED_SOURCES or _in_guarded_dir(job.path):
         return {"error": f"refused: '{job.id}' is a system daemon and is read-only for this tool (no sudo)."}
     if job.source == "cron" and action != "remove":
         return {"error": f"action '{action}' is not supported for cron entries; only 'remove' is."}
@@ -71,16 +79,25 @@ def plan_action(job: Job, action: str) -> dict:
             warnings.append(f"Removes cron line: {job.raw.get('spec')} {job.raw.get('command')}")
             undo.append("Re-add the line with `crontab -e`.")
         else:
+            parent = os.path.dirname(job.path)
+            if os.path.isdir(parent) and not os.access(parent, os.W_OK):
+                return {
+                    "error": (
+                        f"refused: {parent} is not writable by this user, so the plist could not be "
+                        "moved to Trash without sudo. Use 'disable' instead."
+                    )
+                }
             commands.append(["launchctl", "bootout", t])
             files = [job.path] if job.path else []
             trash_name = f"{os.path.basename(job.path)}.{_dt.datetime.now():%Y%m%d%H%M%S}"
-            warnings.append(f"plist moves to ~/.Trash/{trash_name} — nothing is deleted.")
-            undo.append(f"Move ~/.Trash/{trash_name} back to {job.path}")
+            trash_path = os.path.join(expand("~/.Trash"), trash_name)
+            warnings.append(f"plist moves to {trash_path} — nothing is deleted.")
+            undo.append(f"Move {trash_path} back to {job.path}")
             undo.append(f"launchctl bootstrap gui/{os.getuid()} {job.path}")
         if job.source == "brew-service":
             warnings.append("This looks like a brew service — `brew services stop <name>` is the cleaner path.")
 
-    return {
+    plan = {
         "id": job.id,
         "action": action,
         "dry_run": True,
@@ -89,6 +106,9 @@ def plan_action(job: Job, action: str) -> dict:
         "warnings": warnings,
         "undo": undo,
     }
+    if action == "remove" and job.source != "cron":
+        plan["trash_path"] = trash_path  # apply reuses this so the undo recipe names the real file
+    return plan
 
 
 def apply_action(job: Job, plan: dict) -> dict:
@@ -116,8 +136,8 @@ def apply_action(job: Job, plan: dict) -> dict:
                     "detail": (r.stderr or r.stdout).strip()[:200] or None,
                 })
             if plan["action"] == "remove" and job.path and os.path.exists(job.path):
-                trash_name = f"{os.path.basename(job.path)}.{_dt.datetime.now():%Y%m%d%H%M%S}"
-                trash_path = os.path.join(expand("~/.Trash"), trash_name)
+                trash_path = plan["trash_path"]
+                os.makedirs(os.path.dirname(trash_path), exist_ok=True)
                 shutil.move(job.path, trash_path)
                 results.append({"step": f"moved {job.path} -> {trash_path}", "ok": True})
     except Exception as e:  # noqa: BLE001
@@ -141,13 +161,19 @@ def _remove_cron_line(job: Job) -> dict:
         return {"step": "read crontab", "ok": False, "detail": r.stderr.strip()[:200]}
     spec = job.raw.get("spec")
     cmd = job.raw.get("command")
+    if not (spec and cmd):
+        return {"step": "match crontab line", "ok": False, "detail": "job carries no spec/command"}
+    wanted = " ".join(f"{spec} {cmd}".split())  # whitespace-normalised, as discovery parsed it
     kept = []
     removed = 0
     for line in r.stdout.splitlines():
-        if spec and cmd and line.strip() == f"{spec} {cmd}".strip():
+        if " ".join(line.split()) == wanted:
             removed += 1
             continue
         kept.append(line)
+    if removed == 0:
+        return {"step": "match crontab line", "ok": False,
+                "detail": "no crontab line matched; crontab left untouched (edited since scan?)"}
     new = "\n".join(kept) + ("\n" if kept else "")
     p = subprocess.run(["crontab", "-"], input=new, capture_output=True, text=True, timeout=10)
     if p.returncode != 0:

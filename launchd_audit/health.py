@@ -19,8 +19,8 @@ def _name_matches(job_stem: str, filename: str) -> bool:
     job_stem is the last dot-component of the label (e.g. 'dailyreport').
     Matches when the file's stem and the job's stem are prefix- or
     substring-related in either direction — enough to pair
-    'com.kikalab.recall.watcher' with 'watcher.log' and
-    'com.kikalab.recall.dailyreport' with 'report.log'."""
+    'com.example.sync.watcher' with 'watcher.log' and
+    'com.example.sync.dailyreport' with 'report.log'."""
     name = filename.lower()
     for suffix in _LOG_SUFFIXES:
         if name.endswith(suffix):
@@ -40,7 +40,7 @@ def _name_matches(job_stem: str, filename: str) -> bool:
 def evidence_files(job: Job) -> list[str]:
     """Declared log paths PLUS sibling files that look like the job's own logs.
 
-    Many scripts write their own log file (e.g. ~/recall/logs/watcher.log) and
+    Many scripts write their own log file (e.g. ~/sync/logs/watcher.log) and
     leave the plist's StandardOutPath/StandardErrorPath untouched on successful
     runs. stderr mtime alone would flag such healthy jobs as stale — a false
     positive this function exists to prevent."""
@@ -62,7 +62,7 @@ def sibling_listing(job: Job, limit: int = 20) -> list[dict]:
 
     Staleness is a heuristic; when a job is flagged, showing the whole
     directory lets the reader spot the fresh file the script *actually*
-    writes to (e.g. ledger-audit's .last-audit.log)."""
+    writes to (e.g. a hidden .last-run.log)."""
     seen: dict[str, dict] = {}
     dirs = {os.path.dirname(p) for p in job.output_paths if os.path.dirname(p)}
     for d in dirs:
@@ -97,7 +97,7 @@ def log_stats(job: Job, paths: list[str] | None = None) -> list[dict]:
     return stats
 
 
-def audit(jobs: list[Job], since_days: int = 30) -> dict:
+def audit(jobs: list[Job]) -> dict:
     failing: list[dict] = []
     stale: list[dict] = []
     pressure: list[dict] = []
@@ -118,7 +118,10 @@ def audit(jobs: list[Job], since_days: int = 30) -> dict:
                 "id": job.id,
                 "last_exit": job.last_exit,
                 "state": job.state,
-                "note": "last observed exit was non-zero",
+                "note": (
+                    f"last run was killed by signal {-job.last_exit}"
+                    if job.last_exit < 0 else "last observed exit was non-zero"
+                ),
             })
         elif job.raw.get("KeepAlive") and job.state in ("not-loaded",):
             failing.append({

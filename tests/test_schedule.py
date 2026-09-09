@@ -68,12 +68,50 @@ class TestCronHuman:
         assert cad == 300
 
     def test_weekly(self):
-        human, _ = schedule.cron_human("15 2 * * 1")
-        assert human == "weekly (weekday 1) at 02:15"
+        human, cad = schedule.cron_human("15 2 * * 1")
+        assert human == "weekly on Monday at 02:15"
+        assert cad == 604800
 
-    def test_fallback(self):
-        human, cad = schedule.cron_human("1,2 3-5 * * *")
-        assert human == "1,2 3-5 * * *"  # falls back to raw spec
+    def test_sunday_as_seven(self):
+        assert schedule.cron_human("0 3 * * 7")[0] == "weekly on Sunday at 03:00"
+
+    def test_minute_list(self):
+        human, cad = schedule.cron_human("09,39 * * * *")
+        assert human == "hourly at :09, :39"
+        assert cad == 1800
+
+    def test_hour_list(self):
+        assert schedule.cron_human("0 9,13,17 * * *")[0] == "daily at 09:00, 13:00, 17:00"
+
+    def test_hour_step(self):
+        human, cad = schedule.cron_human("0 */6 * * *")
+        assert human == "every 6 hours at :00"
+        assert cad == 21600
+
+    def test_step_within_hours_and_weekday_names(self):
+        human, cad = schedule.cron_human("*/10 9-17 * * mon-fri")
+        assert human == "every 10 minutes during hours 9-17 on Mon-Fri"
+        assert cad == 600
+
+    def test_weekday_range(self):
+        human, _ = schedule.cron_human("0 8 * * 1-5")
+        assert human == "daily at 08:00 on Mon-Fri"
+
+    def test_monthly(self):
+        human, cad = schedule.cron_human("30 4 1 * *")
+        assert human == "monthly on day 1 at 04:30"
+        assert cad == 2629800
+
+    def test_month_name(self):
+        assert schedule.cron_human("0 0 1 jan *")[0] == "monthly on day 1 at 00:00 in Jan"
+
+    def test_minute_and_hour_lists(self):
+        human, _ = schedule.cron_human("1,2 3-5 * * *")
+        assert human == "at minutes 1, 2 of hours 3-5"
+
+    def test_out_of_range_falls_back(self):
+        human, cad = schedule.cron_human("99 * * * *")
+        assert human == "99 * * * *"
         assert cad is None
 
     def test_garbage(self):

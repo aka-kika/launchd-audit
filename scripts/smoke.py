@@ -1,4 +1,4 @@
-"""End-to-end smoke test: spawn the server over stdio, list tools, call two of them.
+"""End-to-end smoke test: spawn the server over stdio, list tools, call the read-only ones, check the action guard.
 
 Run:  uv run python scripts/smoke.py
 """
@@ -17,7 +17,8 @@ async def main() -> int:
     params = StdioServerParameters(command=sys.executable, args=["-m", "launchd_audit"])
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
-            await session.initialize()
+            init = await session.initialize()
+            assert init.instructions, "server should advertise instructions"
 
             tools = await session.list_tools()
             names = [t.name for t in tools.tools]
@@ -31,10 +32,13 @@ async def main() -> int:
             for j in data["jobs"][:5]:
                 print(f"  [{j['source']}] {j['id']} | {j['schedule_human']} | {j['state']}")
 
-            r = await session.call_tool("job_health", {"since_days": 30})
+            r = await session.call_tool("job_health", {})
             h = json.loads(r.content[0].text)
             print(f"job_health -> totals: {h['totals']}")
             print(f"  failing: {len(h['failing'])}, stale: {len(h['stale'])}, log_pressure: {len(h['log_pressure'])}")
+
+            r = await session.call_tool("job_detail", {"id": "__nonexistent__"})
+            assert "error" in json.loads(r.content[0].text)
 
             r = await session.call_tool("job_action", {"id": "__nonexistent__", "action": "disable"})
             guard = json.loads(r.content[0].text)
