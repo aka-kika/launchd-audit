@@ -43,12 +43,12 @@ Guardrails are in the server, not in a companion skill or prompt.
 
 ## Install
 
-Requires macOS, Python 3.11+, and [uv](https://docs.astral.sh/uv/). No clone needed: `uvx` fetches and runs the server straight from GitHub.
+Requires macOS, Python 3.11+, and [uv](https://docs.astral.sh/uv/). The package is on [PyPI](https://pypi.org/project/launchd-audit/); `uvx` fetches and runs it, no clone needed.
 
 ### Claude Code
 
 ```bash
-claude mcp add launchd-audit -- uvx --from git+https://github.com/aka-kika/launchd-audit launchd-audit
+claude mcp add launchd-audit -- uvx launchd-audit
 ```
 
 ### Claude Desktop, Cursor, and other JSON-configured clients
@@ -58,13 +58,13 @@ claude mcp add launchd-audit -- uvx --from git+https://github.com/aka-kika/launc
   "mcpServers": {
     "launchd-audit": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/aka-kika/launchd-audit", "launchd-audit"]
+      "args": ["launchd-audit"]
     }
   }
 }
 ```
 
-Pin a release with `git+https://github.com/aka-kika/launchd-audit@v0.3.0`.
+Pin a version with `uvx launchd-audit==0.3.0`. To run the unreleased `master` instead: `uvx --from git+https://github.com/aka-kika/launchd-audit launchd-audit`.
 
 ### From a local checkout
 
