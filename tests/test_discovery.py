@@ -27,6 +27,17 @@ class TestParsePlist:
         assert "hunter2" not in repr(job)
         assert job.output_paths and job.output_paths[0].endswith("Library/Logs/backup.out")
 
+    def test_program_arguments_are_redacted(self, tmp_path):
+        p = tmp_path / "com.test.sync.plist"
+        write_plist(p, {
+            "Label": "com.test.sync",
+            "ProgramArguments": ["/usr/local/bin/sync", "--api-key", "sk-live-123", "--dest=s3://b"],
+        })
+        job = discovery.parse_plist(str(p), "launchd-user", [])
+        assert "sk-live-123" not in repr(job)
+        assert job.program == "/usr/local/bin/sync --api-key *** --dest=s3://b"
+        assert job.raw["ProgramArguments"][2] == "***"
+
     def test_brew_user_agent_is_brew_service(self, tmp_path):
         p = tmp_path / "homebrew.mxcl.redis.plist"
         write_plist(p, {"Label": "homebrew.mxcl.redis", "KeepAlive": True})

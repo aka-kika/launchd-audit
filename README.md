@@ -6,10 +6,11 @@ Ask an agent: *what's running in the background on this Mac, and is anything bro
 
 ```
 totals: {"jobs": 31, "running": 8, "disabled": 0, "failing": 1, "stale": 1}
-[failing] com.kika.claude-tools-ledger-audit | exit=1
+[failing] com.example.drift-check | exit=1
+[stale]   com.example.backup      | daily at 03:00, no evidence for 41 days
 ```
 
-v0.2.0. Private. macOS only. Python 3.11+.
+macOS only. Python 3.11+. MIT.
 
 ## Why
 
@@ -21,8 +22,8 @@ Four of the five tools are read-only. Mutation is one tool, dry-run by default. 
 
 | Tool | Role |
 |---|---|
-| `list_scheduled_jobs` | Every launchd job, cron entry, and brew service. Schedules as "every 15 min", "daily at 03:00", "keep alive (respawn)". |
-| `job_health` | The audit. Failing, stale, or writing huge logs — with totals and reasons. |
+| `job_health` | The audit. Failing, stale, or writing huge logs, with totals and reasons. Start here. |
+| `list_scheduled_jobs` | Every launchd job, cron entry, and brew service. Schedules as "every 15 minutes", "daily at 03:00", "keep alive (respawn)". |
 | `job_detail` | One job: plist (secrets masked), live `launchctl` state, log tails. |
 | `search_job_logs` | Regex search in that job's output files, optional `since` date. |
 | `job_action` | The only mutating tool. Dry-run unless `confirm=true`. |
@@ -31,53 +32,66 @@ Sources scanned: `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/La
 
 ## Safety
 
-Guardrails are in the server, not in a companion skill.
+Guardrails are in the server, not in a companion skill or prompt.
 
-- Dry-run by default. Without `confirm=true`, `job_action` only reports what it would run.
-- System daemons are listable and never modified.
-- `remove` unloads the plist and moves it to Trash. Every applied action returns an undo recipe.
-- No sudo.
-- `EnvironmentVariables` are masked at parse time. Values never leave the process.
-- Applied actions append to `~/.launchd-audit/actions.jsonl`.
+- **Dry-run by default.** Without `confirm=true`, `job_action` only reports what it would run: commands, files, warnings, and an undo recipe.
+- **System daemons are listable and never modified.** Anything in `/Library/LaunchDaemons` is refused, whatever it is called.
+- **Nothing is deleted.** `remove` unloads the plist and moves it to Trash. Every applied action returns an undo recipe.
+- **No sudo.** A plist the current user cannot move is refused up front, not half-removed.
+- **Secrets are masked at parse time.** `EnvironmentVariables` values never leave the process. Secret-looking `ProgramArguments` (`--token=…`, `API_KEY=…`, `--password …`) are redacted too. Masking is a heuristic: a secret hidden in a plain positional argument or inside a script the job runs is not covered.
+- **Every applied action is appended** to `~/.launchd-audit/actions.jsonl`.
 
 ## Install
 
-Requires macOS, Python 3.11+, and [uv](https://docs.astral.sh/uv/).
+Requires macOS, Python 3.11+, and [uv](https://docs.astral.sh/uv/). No clone needed: `uvx` fetches and runs the server straight from GitHub.
+
+### Claude Code
 
 ```bash
-git clone git@github.com:aka-kika/launchd-audit.git
+claude mcp add launchd-audit -- uvx --from git+https://github.com/aka-kika/launchd-audit launchd-audit
+```
+
+### Claude Desktop, Cursor, and other JSON-configured clients
+
+```json
+{
+  "mcpServers": {
+    "launchd-audit": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/aka-kika/launchd-audit", "launchd-audit"]
+    }
+  }
+}
+```
+
+Pin a release with `git+https://github.com/aka-kika/launchd-audit@v0.3.0`.
+
+### From a local checkout
+
+```bash
+git clone https://github.com/aka-kika/launchd-audit.git
 cd launchd-audit
 uv sync
 uv run pytest -q
-uv run python scripts/smoke.py
+uv run python scripts/smoke.py   # spawns the server over stdio and calls the read-only tools
 ```
 
-Run the server on stdio:
-
-```bash
-uv run launchd-audit
-```
-
-## Client config
-
-Point any MCP client at the repo directory:
+Then point the client at the checkout:
 
 ```json
 {
   "mcpServers": {
     "launchd-audit": {
       "command": "uv",
-      "args": [
-        "--directory", "/path/to/launchd-audit",
-        "run",
-        "launchd-audit"
-      ]
+      "args": ["--directory", "/path/to/launchd-audit", "run", "launchd-audit"]
     }
   }
 }
 ```
 
-Then ask the client something like:
+## Use
+
+Ask the client something like:
 
 - "What scheduled jobs are on this Mac?"
 - "Is anything quietly failing?"
@@ -86,12 +100,13 @@ Then ask the client something like:
 
 Worked conversations are in [EXAMPLES.md](EXAMPLES.md).
 
-## Limitations (v1)
+## Limitations
 
 - `/System/Library` launchd items are not scanned.
-- Full `system/` domain runtime state needs root. Refused by design, so system daemon state is partial.
+- Full `system/` domain runtime state needs root. Refused by design, so system daemon state shows as `not-loaded` and `last_exit` is unknown.
 - Stale detection uses log-file mtimes. Jobs with no declared output logs are not flagged stale.
-- A job visible in two `launchctl` views can appear twice in `job_health` offenders.
+- `last_exit` in listings comes from `launchctl list`, which reports 0 for a job that has never run. `job_detail` uses `launchctl print` and reports `null` in that case.
+- Cron entries have no live state (macOS cron does not expose one). Only `remove` is supported for them.
 - Not Windows Task Scheduler. Not Linux systemd.
 
 ## Docs
@@ -103,4 +118,6 @@ Worked conversations are in [EXAMPLES.md](EXAMPLES.md).
 | [EXAMPLES.md](EXAMPLES.md) | Five example sessions |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 
-Built August–September 2026. Last reviewed 2026-09-07.
+## License
+
+[MIT](LICENSE).

@@ -8,7 +8,7 @@ import subprocess
 
 from . import schedule
 from .model import Job
-from .util import expand, mask_mapping
+from .util import expand, mask_mapping, redact_args
 
 USER_AGENT_DIRS = ["~/Library/LaunchAgents", "/Library/LaunchAgents"]
 SYSTEM_DAEMON_DIRS = ["/Library/LaunchDaemons"]
@@ -27,7 +27,9 @@ def parse_plist(path: str, kind: str, errors: list[dict]) -> Job | None:
     program = None
     prog_args = raw.get("ProgramArguments")
     if isinstance(prog_args, list) and prog_args:
-        program = " ".join(str(a) for a in prog_args)
+        prog_args = redact_args(prog_args)
+        raw["ProgramArguments"] = prog_args
+        program = " ".join(prog_args)
     elif raw.get("Program"):
         program = str(raw["Program"])
 
@@ -69,7 +71,8 @@ def parse_plist(path: str, kind: str, errors: list[dict]) -> Job | None:
         cadence_seconds=cadence,
         disabled=bool(raw.get("Disabled")) or False,
         output_paths=[expand(p) for p in outputs],
-        # EnvironmentVariables is masked before it can ever leave this process
+        # EnvironmentVariables values are masked (and ProgramArguments redacted above)
+        # before anything can leave this process
         raw={k: (mask_mapping(v) if k == "EnvironmentVariables" else v) for k, v in raw.items()},
     )
 

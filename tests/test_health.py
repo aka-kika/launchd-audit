@@ -40,7 +40,7 @@ class TestStale:
         assert result["stale"] == []
 
     def test_fresh_sibling_log_prevents_false_positive(self, tmp_path):
-        """The recall.watcher case: stderr declared in plist is ancient (silent
+        """The sync.watcher case: stderr declared in plist is ancient (silent
         successes write nothing), but the script's own watcher.log is fresh.
         Must NOT be flagged stale."""
         stderr = tmp_path / "watcher.stderr.log"
@@ -49,7 +49,7 @@ class TestStale:
         os.utime(stderr, (old, old))
         sibling = tmp_path / "watcher.log"  # script's own log, fresh
         sibling.write_text("fresh")
-        job = make_job(tmp_path, id="com.kikalab.recall.watcher", output_paths=[str(stderr)])
+        job = make_job(tmp_path, id="com.example.sync.watcher", output_paths=[str(stderr)])
         result = health.audit([job])
         assert result["stale"] == [], "fresh sibling log must rescue the job"
 
@@ -67,14 +67,14 @@ class TestStale:
         assert result["stale"][0]["log_dir_evidence"], "flagged entries must carry evidence"
 
     def test_dailyreport_report_log_case(self, tmp_path):
-        """Job 'com.kikalab.recall.dailyreport' writes to shared 'report.log'."""
+        """Job 'com.example.sync.dailyreport' writes to shared 'report.log'."""
         stderr = tmp_path / "dailyreport.stderr.log"
         stderr.write_text("old")
         old = time.time() - 40 * 86400
         os.utime(stderr, (old, old))
         shared = tmp_path / "report.log"  # job stem ENDS WITH 'report'
         shared.write_text("fresh")
-        job = make_job(tmp_path, id="com.kikalab.recall.dailyreport", output_paths=[str(stderr)])
+        job = make_job(tmp_path, id="com.example.sync.dailyreport", output_paths=[str(stderr)])
         result = health.audit([job])
         assert result["stale"] == []
 

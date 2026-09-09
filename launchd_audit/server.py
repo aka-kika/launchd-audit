@@ -9,11 +9,20 @@ from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
 
-from . import actions, discovery, health, runtime
+from . import __version__, actions, discovery, health, runtime
 from .model import Job
 from .util import tail_text
 
-mcp = MCPServer("launchd-audit")
+INSTRUCTIONS = """\
+launchd-audit inspects macOS background jobs (launchd agents/daemons, cron, brew services).
+Start with job_health for "is anything broken?", list_scheduled_jobs for "what runs here?".
+Four tools are read-only. job_action is the only tool that changes anything: it is a
+dry-run unless confirm=true, so always show the user the dry-run plan (commands, files,
+warnings, undo) and get their OK before calling it again with confirm=true.
+System daemons are never modified. Nothing is deleted; removed plists go to Trash.
+Environment variable values and secret-looking program arguments are masked."""
+
+mcp = MCPServer("launchd-audit", instructions=INSTRUCTIONS, version=__version__)
 
 Scope = Literal["all", "user", "system", "cron", "brew-service"]
 
@@ -31,9 +40,11 @@ def _collect_jobs(scope: str = "all", include_disabled: bool = True) -> tuple[li
     elif scope == "brew-service":
         jobs = [j for j in jobs if j.source == "brew-service"]
 
+    # Two launchctl calls for the whole listing, however many jobs there are.
     disabled_overrides = runtime.launchctl_disabled_overrides()
+    loaded = runtime.launchctl_list()
     for j in jobs:
-        runtime.merge_runtime(j, disabled_overrides)
+        runtime.merge_runtime(j, disabled_overrides, loaded)
 
     if not include_disabled:
         jobs = [j for j in jobs if j.state != "disabled" and not j.disabled]
@@ -70,10 +81,11 @@ def list_scheduled_jobs(scope: Scope = "all", include_disabled: bool = True) -> 
 
 
 @mcp.tool()
-def job_health(since_days: int = 30) -> str:
-    """The audit: which jobs are failing, stale (haven't run on schedule), or writing huge logs."""
+def job_health() -> str:
+    """The audit: which jobs are failing (non-zero exit, keep-alive not loaded), stale (log
+    evidence older than 3x their cadence), or writing huge logs (>100 MB). Start here."""
     jobs, errors = _collect_jobs("all", True)
-    result = health.audit(jobs, since_days)
+    result = health.audit(jobs)
     result["errors"] = errors
     return _dumps(result)
 
@@ -84,13 +96,15 @@ def job_detail(id: str) -> str:
     job, errors = _find_job(id)
     if job is None:
         return _dumps({"error": f"no job with id '{id}'", "errors": errors})
+    info = runtime.launchctl_print(job.id) if job.source != "cron" else None
+    if info:
+        runtime.merge_print_details(job, info)
     env = job.raw.get("EnvironmentVariables")
     payload = {
         **job.to_dict(),
-        "schedule_human": job.schedule_human,
         "plist": job.raw if job.source != "cron" else None,
         "cron": job.raw if job.source == "cron" else None,
-        "launchctl_print": runtime.launchctl_print(job.id) if job.source != "cron" else None,
+        "launchctl_print": info,
         "environment": (
             {"masked_keys": sorted(env.keys()), "note": "values are never shown"}
             if isinstance(env, dict) and env else None
@@ -99,6 +113,7 @@ def job_detail(id: str) -> str:
             {
                 "path": p,
                 "exists": os.path.exists(p),
+                "bytes": os.path.getsize(p) if os.path.exists(p) else None,
                 "tail": tail_text(p, 8 * 1024).splitlines()[-20:] if os.path.exists(p) else None,
             }
             for p in job.output_paths
@@ -110,8 +125,9 @@ def job_detail(id: str) -> str:
 
 @mcp.tool()
 def search_job_logs(id: str, pattern: str, since: str | None = None, limit: int = 50) -> str:
-    """Regex-search a job's output log files. `since` is an ISO date (YYYY-MM-DD); lines whose
-    leading date is older are skipped, lines without a parseable date are always included."""
+    """Regex-search a job's output log files (case-insensitive). `since` is an ISO date
+    (YYYY-MM-DD); lines whose leading date is older are skipped, lines without a parseable
+    date are always included."""
     job, errors = _find_job(id)
     if job is None:
         return _dumps({"error": f"no job with id '{id}'", "errors": errors})
@@ -121,6 +137,8 @@ def search_job_logs(id: str, pattern: str, since: str | None = None, limit: int 
         rx = re.compile(pattern, re.IGNORECASE)
     except re.error as e:
         return _dumps({"error": f"bad regex: {e}"})
+    if since and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
+        return _dumps({"error": "since must be an ISO date like 2026-08-01"})
 
     date_rx = re.compile(r"(\d{4}-\d{2}-\d{2})")
     matches: list[dict] = []
