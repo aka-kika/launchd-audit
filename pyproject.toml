@@ -28,7 +28,7 @@ dependencies = [
 Homepage = "https://github.com/aka-kika/launchd-audit"
 Repository = "https://github.com/aka-kika/launchd-audit"
 Issues = "https://github.com/aka-kika/launchd-audit/issues"
-Changelog = "https://github.com/aka-kika/launchd-audit/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/aka-kika/launchd-audit/blob/master/CHANGELOG.md"
 
 [project.scripts]
 launchd-audit = "launchd_audit.server:main"
